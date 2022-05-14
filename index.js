@@ -22,10 +22,44 @@ async function run() {
         await client.connect();
         console.log('Db is connected');
         const servicesCollection = client.db("doctors_portal").collection("services");
+        const bookingCollection = client.db("doctors_portal").collection("booking");
         app.get("/service", async (req, res) => {
             const query = {}
             const cursor = servicesCollection.find(query)
             const services = await cursor.toArray();
+            res.send(services)
+        });
+        app.post('/booking', async (req, res) => {
+            const booking = req.body;
+            console.log(booking);
+            const query = {
+                treatment
+                    : booking.treatment, date: booking.date, slot: booking.slot, patientEmail: booking.patientEmail
+            }
+            console.log(query);
+            const exists = await bookingCollection.findOne(query)
+
+            if (exists) {
+                return res.send({ success: false, booking: exists })
+            }
+            else {
+                const result = await bookingCollection.insertOne(booking);
+                res.send({ success: true, result })
+            }
+        })
+        app.get('/available', async (req, res) => {
+            const date = req.query.date
+
+            const services = await servicesCollection.find().toArray();
+            const query = { date: date };
+            const bookings = await bookingCollection.find(query).toArray();
+            services.forEach(service => {
+                const serviceBooking = bookings.filter(b => b.treatment === service.name)
+                const booked = serviceBooking.map(s => s.slot);
+                service.booked = booked;
+                const available = service.slots.filter(s => !booked.includes(s))
+                service.slots = available
+            })
             res.send(services)
         })
     }
