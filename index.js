@@ -15,6 +15,7 @@ app.get('/', (req, res) => {
 
 function verifyToken(req, res, next) {
     const authHeader = req.headers.authorization;
+
     if (!authHeader) {
         return res.status(401).send({ message: "Unauthorized access" })
     }
@@ -38,12 +39,24 @@ async function run() {
         const servicesCollection = client.db("doctors_portal").collection("services");
         const bookingCollection = client.db("doctors_portal").collection("booking");
         const userCollection = client.db("doctors_portal").collection("user");
+        const doctorsCollection = client.db("doctors_portal").collection("doctors");
         app.get("/service", async (req, res) => {
             const query = {}
-            const cursor = servicesCollection.find(query)
+            const cursor = servicesCollection.find(query).project({ name: 1 })
             const services = await cursor.toArray();
             res.send(services)
         });
+
+        const verifyAdmin = async (req, res, next) => {
+            const requester = req.decoded.email;
+            const requesterAccount = await userCollection.findOne({ email: requester })
+            if (requesterAccount.role === "admin") {
+                next()
+            }
+            else {
+                res.status(403).send({ message: 'Forbbiden' });
+            }
+        }
         app.post('/booking', async (req, res) => {
             const booking = req.body;
 
@@ -97,26 +110,33 @@ async function run() {
         })
         app.put('/user/admin/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
-            const requester = req.decoded.email;
-            const requesterAccount = await userCollection.findOne({ email: requester })
-            if (requesterAccount.role === "admin") {
-                const filter = { email: email }
 
-                const updatedDoc = {
-                    $set: { role: 'admin' }
-                }
-                const result = await userCollection.updateOne(filter, updatedDoc);
-                const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN, { expiresIn: '1h' })
-                res.send(result)
-            }
-            else {
-                res.status(403).send({ message: 'Forbbiden' });
-            }
 
+            const filter = { email: email }
+
+            const updatedDoc = {
+                $set: { role: 'admin' }
+            }
+            const result = await userCollection.updateOne(filter, updatedDoc);
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN, { expiresIn: '1h' })
+            res.send(result)
+
+
+
+        })
+        app.get('/doctors', verifyToken, verifyAdmin, async (req, res) => {
+            const doctors = await doctorsCollection.find().toArray();
+            console.log(doctors);
+            res.send(doctors)
+        })
+        app.post('/doctors', verifyToken, verifyAdmin, async (req, res) => {
+            const doctor = req.body
+            const result = await doctorsCollection.insertOne(doctor)
+            res.send(result)
         })
         app.get('/admin/:email', async (req, res) => {
             const email = req.params.email
-            console.log(email);
+
             const user = await userCollection.findOne({ email: email })
             const isAdmin = user.role === 'admin';
             res.send({ admin: isAdmin })
