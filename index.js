@@ -5,6 +5,7 @@ const app = express()
 require('dotenv').config();
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const res = require('express/lib/response');
+const { query } = require('express');
 const port = process.env.PORT || 5000
 app.use(cors());
 app.use(express.json())
@@ -128,6 +129,13 @@ async function run() {
             const doctors = await doctorsCollection.find().toArray();
             console.log(doctors);
             res.send(doctors)
+        })
+        app.delete('/doctor/:email', verifyToken, verifyAdmin, async (req, res) => {
+            const email = req.params.email;
+            const filter = { email: email }
+            const result = await doctorsCollection.deleteOne(filter)
+
+            res.send(result)
         })
         app.post('/doctors', verifyToken, verifyAdmin, async (req, res) => {
             const doctor = req.body
