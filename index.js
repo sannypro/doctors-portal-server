@@ -3,8 +3,9 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const app = express()
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const res = require('express/lib/response');
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const { query } = require('express');
 const port = process.env.PORT || 5000
 app.use(cors());
@@ -16,6 +17,7 @@ app.get('/', (req, res) => {
 
 function verifyToken(req, res, next) {
     const authHeader = req.headers.authorization;
+
 
     if (!authHeader) {
         return res.status(401).send({ message: "Unauthorized access" })
@@ -41,6 +43,7 @@ async function run() {
         const bookingCollection = client.db("doctors_portal").collection("booking");
         const userCollection = client.db("doctors_portal").collection("user");
         const doctorsCollection = client.db("doctors_portal").collection("doctors");
+        const paymentsCollection = client.db("doctors_portal").collection("payments");
         app.get("/service", async (req, res) => {
             const query = {}
             const cursor = servicesCollection.find(query).project({ name: 1 })
@@ -76,6 +79,21 @@ async function run() {
                 const result = await bookingCollection.insertOne(booking);
                 res.send({ success: true, result })
             }
+        })
+        app.post('/create-payment-intent', verifyToken, async (req, res) => {
+            const service = req.body
+            const price = service.price;
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "usd",
+                payment_method_types: ['card']
+
+
+            });
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
         })
         app.get('/available', async (req, res) => {
             const date = req.query.date
@@ -127,7 +145,7 @@ async function run() {
         })
         app.get('/doctors', verifyToken, verifyAdmin, async (req, res) => {
             const doctors = await doctorsCollection.find().toArray();
-            console.log(doctors);
+
             res.send(doctors)
         })
         app.delete('/doctor/:email', verifyToken, verifyAdmin, async (req, res) => {
@@ -148,6 +166,12 @@ async function run() {
             const user = await userCollection.findOne({ email: email })
             const isAdmin = user.role === 'admin';
             res.send({ admin: isAdmin })
+        });
+        app.get('/booking/:id', verifyToken, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) }
+            const booking = await bookingCollection.findOne(query);
+            res.send(booking)
         })
         app.get('/dashboard', verifyToken, async (req, res) => {
             const patientEmail = req.query.patientEmail;
@@ -162,6 +186,21 @@ async function run() {
             }
 
 
+        })
+        app.put('/booking/:id', verifyToken, async (req, res) => {
+            const id = req.params.id;
+            const payment = req.body
+            console.log(payment);
+            const filter = { _id: ObjectId(id) }
+            const updatedDoc = {
+                $set: {
+                    paid: true,
+                    transactionId: payment.transactionId
+                }
+            }
+            const updatedBooking = await bookingCollection.updateOne(filter, updatedDoc)
+            const result = await paymentsCollection.insertOne(payment)
+            res.send(updatedDoc)
         })
     }
     finally {
